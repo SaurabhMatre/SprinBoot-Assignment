@@ -1,0 +1,223 @@
+{
+  "info": {
+    "name": "Social API - Core & Guardrails",
+    "description": "Postman collection for the Spring Boot Social API microservice. Tests all Phase 1-3 endpoints including guardrail edge cases.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080", "type": "string" },
+    { "key": "postId",  "value": "1",                    "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Setup — Create User",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/users",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"alice\",\n  \"isPremium\": false\n}"
+        }
+      }
+    },
+    {
+      "name": "Setup — Create Bot",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/bots",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"NewsBot\",\n  \"personaDescription\": \"A bot that summarizes news articles.\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 1 — Create Post (by User)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.collectionVariables.set('postId', json.id);",
+              "pm.test('Has id', () => pm.expect(json.id).to.be.a('number'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"authorId\": 1,\n  \"authorType\": \"USER\",\n  \"content\": \"Hello world! This is my first post.\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 1 — Add Human Comment",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('depthLevel 0', () => pm.expect(json.depthLevel).to.equal(0));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts/{{postId}}/comments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"authorId\": 1,\n  \"authorType\": \"USER\",\n  \"content\": \"Great post!\",\n  \"depthLevel\": 0\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 1 — Like Post",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Virality >= 20', () => pm.expect(json.viralityScore).to.be.at.least(20));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts/{{postId}}/like",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": 1\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 2 — Bot Comment (allowed)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 201', () => pm.response.to.have.status(201));",
+              "const json = pm.response.json();",
+              "pm.test('Author is BOT', () => pm.expect(json.authorType).to.equal('BOT'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts/{{postId}}/comments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"authorId\": 1,\n  \"authorType\": \"BOT\",\n  \"content\": \"Interesting perspective! Here's more context...\",\n  \"depthLevel\": 0,\n  \"postOwnerId\": 1\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 2 — Cooldown Check (should 429)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 429 (cooldown active)', () => pm.response.to.have.status(429));",
+              "const json = pm.response.json();",
+              "pm.test('Has message', () => pm.expect(json.message).to.include('cooldown'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts/{{postId}}/comments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"authorId\": 1,\n  \"authorType\": \"BOT\",\n  \"content\": \"Trying to comment again within 10 minutes...\",\n  \"depthLevel\": 0,\n  \"postOwnerId\": 1\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 2 — Vertical Cap Exceeded (should 429)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 429 (vertical cap)', () => pm.response.to.have.status(429));",
+              "const json = pm.response.json();",
+              "pm.test('Depth rejected', () => pm.expect(json.message).to.include('depth'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts/{{postId}}/comments",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"authorId\": 1,\n  \"authorType\": \"BOT\",\n  \"content\": \"Deeply nested bot comment\",\n  \"depthLevel\": 21,\n  \"postOwnerId\": 2\n}"
+        }
+      }
+    },
+    {
+      "name": "Phase 2 — Get Virality Score",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 200', () => pm.response.to.have.status(200));",
+              "const json = pm.response.json();",
+              "pm.test('Has viralityScore', () => pm.expect(json.viralityScore).to.be.a('number'));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/api/posts/{{postId}}/virality"
+      }
+    },
+    {
+      "name": "Phase 2 — Like Duplicate (should 409)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status 409 (already liked)', () => pm.response.to.have.status(409));"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/api/posts/{{postId}}/like",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": 1\n}"
+        }
+      }
+    }
+  ]
+}
